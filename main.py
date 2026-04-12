@@ -51,12 +51,13 @@ def analyze(df):
 def decision(df):
     last = df.iloc[-1]
 
-    rsi = last["RSI"]
-    price = last["Close"]
-    ema5 = last["EMA5"]
-    ema20 = last["EMA20"]
-    bbu = last["BBU"]
-    bbl = last["BBL"]
+    # FIX: pastikan scalar (float), bukan Series
+    rsi = float(last["RSI"])
+    price = float(last["Close"])
+    ema5 = float(last["EMA5"])
+    ema20 = float(last["EMA20"])
+    bbu = float(last["BBU"])
+    bbl = float(last["BBL"])
 
     signal = "WAIT"
     emoji = "🟡"
