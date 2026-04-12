@@ -29,11 +29,20 @@ def get_data(ticker):
         return None
 
 def analyze(df):
-    df["RSI"] = RSIIndicator(df["Close"], window=14).rsi()
-    df["EMA5"] = EMAIndicator(df["Close"], window=5).ema_indicator()
-    df["EMA20"] = EMAIndicator(df["Close"], window=20).ema_indicator()
+    # FIX: pastikan semua kolom jadi 1D Series
+    close = df["Close"].squeeze()
+    high = df["High"].squeeze()
+    low = df["Low"].squeeze()
 
-    bb = BollingerBands(df["Close"], window=20)
+    # RSI
+    df["RSI"] = RSIIndicator(close, window=14).rsi()
+
+    # EMA
+    df["EMA5"] = EMAIndicator(close, window=5).ema_indicator()
+    df["EMA20"] = EMAIndicator(close, window=20).ema_indicator()
+
+    # Bollinger Bands
+    bb = BollingerBands(close, window=20)
     df["BBU"] = bb.bollinger_hband()
     df["BBL"] = bb.bollinger_lband()
 
