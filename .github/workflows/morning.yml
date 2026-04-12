@@ -21,8 +21,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance pandas python-dotenv requests openai
-          pip install git+https://github.com/twopirllc/pandas-ta.git
+          pip install -r requirements.txt
+          pip install https://github.com/twopirllc/pandas-ta/archive/refs/heads/main.zip
 
       - name: Run Bot
         env:
