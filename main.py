@@ -1,16 +1,15 @@
-import os
-import time
-import requests
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import requests
+import os
 from datetime import datetime
+from ta.momentum import RSIIndicator
+from ta.trend import EMAIndicator
+from ta.volatility import BollingerBands
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# ==============================
-# LOAD ENV
-# ==============================
+# Load ENV
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -21,192 +20,134 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 TICKERS = ["BBCA.JK", "TLKM.JK", "GOTO.JK", "AAPL", "NVDA"]
 
-# ==============================
-# TELEGRAM
-# ==============================
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+def get_data(ticker):
     try:
-        requests.post(url, json={
-            "chat_id": CHAT_ID,
-            "text": msg,
-            "parse_mode": "Markdown"
-        }, timeout=10)
+        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        return df.dropna()
     except Exception as e:
-        print(f"[TELEGRAM ERROR] {e}")
-
-# ==============================
-# AI REASON
-# ==============================
-def ai_reason(df):
-    try:
-        last5 = df.tail(5)[["Open","High","Low","Close"]]
-
-        text = ""
-        for i,row in last5.iterrows():
-            text += f"{i.date()} O:{row['Open']:.2f} H:{row['High']:.2f} L:{row['Low']:.2f} C:{row['Close']:.2f}\n"
-
-        prompt = f"""
-Anda adalah analis teknikal profesional.
-Berikan 1 kalimat analisis tajam, singkat, trading-oriented.
-
-Data:
-{text}
-"""
-
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role":"user","content":prompt}],
-            max_tokens=50,
-            temperature=0.7
-        )
-
-        return res.choices[0].message.content.strip()
-
-    except Exception as e:
-        print("[AI ERROR]", e)
-        return "AI unavailable"
-
-# ==============================
-# ANALYSIS CORE
-# ==============================
-def analyze(ticker):
-    try:
-        df = yf.download(ticker, period="90d", progress=False)
-
-        if df.empty:
-            return None
-
-        # INDICATORS
-        df["RSI"] = ta.rsi(df["Close"], length=14)
-        df["EMA5"] = ta.ema(df["Close"], length=5)
-        df["EMA20"] = ta.ema(df["Close"], length=20)
-        df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
-
-        bb = ta.bbands(df["Close"])
-        df["BBU"] = bb["BBU_20_2.0"]
-        df["BBL"] = bb["BBL_20_2.0"]
-
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        price = last["Close"]
-        change = ((price - prev["Close"]) / prev["Close"]) * 100
-
-        rsi = last["RSI"]
-        ema5 = last["EMA5"]
-        ema20 = last["EMA20"]
-        atr = last["ATR"]
-
-        support = df["Low"].tail(7).min()
-        resistance = df["High"].tail(7).max()
-
-        # ==============================
-        # SCORING SYSTEM
-        # ==============================
-        score = 0
-        reasons = []
-
-        if rsi < 40:
-            score += 2
-            reasons.append("RSI low")
-
-        if rsi > 70:
-            score -= 2
-            reasons.append("RSI high")
-
-        if ema5 > ema20:
-            score += 2
-            reasons.append("Uptrend")
-
-        if prev["EMA5"] < prev["EMA20"] and ema5 > ema20:
-            score += 3
-            reasons.append("Golden Cross")
-
-        if price < last["BBL"]:
-            score += 1
-            reasons.append("Lower BB")
-
-        if price > last["BBU"]:
-            score -= 2
-            reasons.append("Upper BB")
-
-        # ==============================
-        # SIGNAL
-        # ==============================
-        if score >= 4:
-            signal = "BUY"
-            emoji = "🔵"
-        elif score <= -2:
-            signal = "SELL/TP"
-            emoji = "🔴"
-        else:
-            signal = "WAIT"
-            emoji = "🟡"
-
-        confidence = min(max((score + 5) * 10, 0), 100)
-
-        # ==============================
-        # RISK MANAGEMENT
-        # ==============================
-        entry = support
-        stoploss = support - atr
-        takeprofit = resistance
-
-        # ==============================
-        # AI
-        # ==============================
-        ai = ai_reason(df)
-
-        return {
-            "ticker": ticker,
-            "emoji": emoji,
-            "signal": signal,
-            "price": price,
-            "change": change,
-            "entry": entry,
-            "sl": stoploss,
-            "tp": takeprofit,
-            "confidence": confidence,
-            "reason": ", ".join(reasons),
-            "ai": ai
-        }
-
-    except Exception as e:
-        print(f"[ERROR {ticker}]", e)
+        print(f"Error fetch {ticker}: {e}")
         return None
 
-# ==============================
-# MAIN
-# ==============================
-def main():
-    today = datetime.now().strftime("%d-%m-%Y")
+def analyze(df):
+    # FIX: pastikan semua kolom jadi 1D Series
+    close = df["Close"].squeeze()
+    high = df["High"].squeeze()
+    low = df["Low"].squeeze()
 
-    msg = f"📊 *MORNING SIGNAL PRO {today}*\n"
-    msg += "--------------------------------\n"
+    # RSI
+    df["RSI"] = RSIIndicator(close, window=14).rsi()
 
-    for t in TICKERS:
-        data = analyze(t)
-        time.sleep(1)
+    # EMA
+    df["EMA5"] = EMAIndicator(close, window=5).ema_indicator()
+    df["EMA20"] = EMAIndicator(close, window=20).ema_indicator()
 
-        if not data:
-            continue
+    # Bollinger Bands
+    bb = BollingerBands(close, window=20)
+    df["BBU"] = bb.bollinger_hband()
+    df["BBL"] = bb.bollinger_lband()
 
-        # FILTER SINYAL KUAT
-        if data["confidence"] < 50:
-            continue
+    return df
 
-        msg += (
-            f"{data['emoji']} *{data['ticker']}*: {data['signal']} ({data['confidence']}%)\n"
-            f"Price: {data['price']:.2f} ({data['change']:.2f}%)\n"
-            f"Entry: {data['entry']:.2f}\n"
-            f"SL: {data['sl']:.2f} | TP: {data['tp']:.2f}\n"
-            f"Reason: {data['reason']}\n"
-            f"AI: {data['ai']}\n\n"
+def decision(df):
+    last = df.iloc[-1]
+
+    # FIX: pastikan scalar (float), bukan Series
+    rsi = float(last["RSI"])
+    price = float(last["Close"])
+    ema5 = float(last["EMA5"])
+    ema20 = float(last["EMA20"])
+    bbu = float(last["BBU"])
+    bbl = float(last["BBL"])
+
+    signal = "WAIT"
+    emoji = "🟡"
+    reason = "Konsolidasi / belum ada sinyal kuat"
+
+    # BUY condition
+    if (rsi < 40 and price > ema20) or (ema5 > ema20):
+        signal = "BUY"
+        emoji = "🔵"
+        reason = "Momentum bullish awal"
+
+    # SELL condition
+    elif rsi > 70 or price > bbu:
+        signal = "SELL"
+        emoji = "🔴"
+        reason = "Overbought / potensi koreksi"
+
+    return signal, emoji, reason
+
+def support_resistance(df):
+    support = df["Low"].tail(7).min()
+    resistance = df["High"].tail(7).max()
+    return support, resistance
+
+def ai_reason(df):
+    try:
+        last5 = df.tail(5)[["Open", "High", "Low", "Close"]]
+        data_text = last5.to_string()
+
+        prompt = f"""
+Analisa data OHLC berikut dan berikan 1 kalimat tajam seperti analis profesional:
+
+{data_text}
+
+Contoh:
+"Momentum bullish dengan tekanan beli meningkat setelah pullback minor"
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=50
         )
 
-    send_telegram(msg)
+        return response.choices[0].message.content.strip()
 
+    except Exception as e:
+        print("AI error:", e)
+        return "Analisa AI tidak tersedia"
+
+def send_telegram(message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": message
+        }
+        requests.post(url, data=payload)
+    except Exception as e:
+        print("Telegram error:", e)
+
+def main():
+    today = datetime.now().strftime("%Y-%m-%d")
+    final_message = f"📊 MORNING SIGNAL {today}\n--------------------------\n"
+
+    for ticker in TICKERS:
+        df = get_data(ticker)
+        if df is None or df.empty:
+            continue
+
+        df = analyze(df)
+
+        signal, emoji, reason = decision(df)
+        support, resistance = support_resistance(df)
+
+        last_price = df["Close"].iloc[-1]
+        prev_price = df["Close"].iloc[-2]
+        change = ((last_price - prev_price) / prev_price) * 100
+
+        ai_text = ai_reason(df)
+
+        message = f"""
+{ticker}: {emoji} {signal}
+Price: {last_price:.2f} ({change:.2f}%)
+Area: {support:.2f} - {resistance:.2f}
+Reason: {ai_text}
+"""
+        final_message += message + "\n"
+
+    send_telegram(final_message)
 
 if __name__ == "__main__":
     main()
