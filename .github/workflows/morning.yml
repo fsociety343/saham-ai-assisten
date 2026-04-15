@@ -2,8 +2,8 @@ name: Morning Signal PRO
 
 on:
   schedule:
-    # 08:30 WIB = 01:30 UTC, Senin-Jumat
-    - cron: "30 1 * * 1-5"
+    - cron: "0 9,12,15 * * 1-5"
+      timezone: "Asia/Jakarta"
   workflow_dispatch:
 
 jobs:
