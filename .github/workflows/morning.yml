@@ -2,19 +2,24 @@ name: Morning Signal PRO
 
 on:
   schedule:
+    # 08:30 WIB = 01:30 UTC, Senin-Jumat
     - cron: "30 1 * * 1-5"
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -23,21 +28,23 @@ jobs:
 
       - name: Run Morning Signal Bot
         env:
+          # Secrets
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-          UNIVERSE_FILE: ${{ vars.UNIVERSE_FILE }}
-          YF_PERIOD: ${{ vars.YF_PERIOD }}
-          YF_INTERVAL: ${{ vars.YF_INTERVAL }}
-          BATCH_SIZE: ${{ vars.BATCH_SIZE }}
-          BATCH_SLEEP_SECONDS: ${{ vars.BATCH_SLEEP_SECONDS }}
-          MAX_TOP_GLOBAL: ${{ vars.MAX_TOP_GLOBAL }}
-          MAX_PER_CATEGORY: ${{ vars.MAX_PER_CATEGORY }}
-          MIN_ROWS: ${{ vars.MIN_ROWS }}
-          MESSAGE_LIMIT: ${{ vars.MESSAGE_LIMIT }}
-          ENABLE_AI: ${{ vars.ENABLE_AI }}
-          AI_MAX_COUNT: ${{ vars.AI_MAX_COUNT }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-          SEND_CSV_REPORT: ${{ vars.SEND_CSV_REPORT }}
+          # Config with fallback default
+          UNIVERSE_FILE: ${{ vars.UNIVERSE_FILE || 'data/syariah_universe.csv' }}
+          YF_PERIOD: ${{ vars.YF_PERIOD || '6mo' }}
+          YF_INTERVAL: ${{ vars.YF_INTERVAL || '1d' }}
+          BATCH_SIZE: ${{ vars.BATCH_SIZE || '25' }}
+          BATCH_SLEEP_SECONDS: ${{ vars.BATCH_SLEEP_SECONDS || '1' }}
+          MAX_TOP_GLOBAL: ${{ vars.MAX_TOP_GLOBAL || '20' }}
+          MAX_PER_CATEGORY: ${{ vars.MAX_PER_CATEGORY || '5' }}
+          MIN_ROWS: ${{ vars.MIN_ROWS || '40' }}
+          MESSAGE_LIMIT: ${{ vars.MESSAGE_LIMIT || '3900' }}
+          ENABLE_AI: ${{ vars.ENABLE_AI || 'true' }}
+          AI_MAX_COUNT: ${{ vars.AI_MAX_COUNT || '5' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          SEND_CSV_REPORT: ${{ vars.SEND_CSV_REPORT || 'false' }}
         run: python main.py
